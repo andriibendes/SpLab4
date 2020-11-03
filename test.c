@@ -11,17 +11,15 @@ int main() {
     }
     return 0;*/
 
-    /*
+
         printf("Enter a positive integer: ");
         scanf("%d", &num);
 
-    */
-        //printf("Factors of %d are: ", num);
-            char[] 	awraf = "sdsdf";
 
-            int g = 1.5e3;
 
-    	int d = 0X123f;
+        char[] awraf = "sdsdf";
+        int g = 1.5e3;
+    	int d = 0X12gwqw3f;
         int sdasdqw = 0x123A2;
         bool sdfs = true;
         bool sdqwe = false;

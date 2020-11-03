@@ -7,7 +7,5 @@ public enum Lexem {
     PUNCTATION,
     IDENTIFIER,
     ERROR,
-    HEADER,
-    CHARACTER,
-    BOOLEAN
+    CHARACTER
 }

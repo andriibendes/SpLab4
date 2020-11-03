@@ -11,7 +11,7 @@ public class Reader {
             while (reader.hasNextLine())
             {
                 String line = reader.nextLine();
-                lexer.eatLine(line);
+                lexer.process(line);
             }
             lexer.outResults();
 

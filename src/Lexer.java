@@ -5,21 +5,80 @@ import java.util.List;
 
 public class Lexer {
     private List<Token> lexems = new ArrayList<Token>();
-    private State state = State.COMMON;
+    private boolean inComment = false;
 
     private final List<String> reserved = Arrays.asList("if","else","switch","case","default","break","int","float","char",
             "double","long","for","while","do","void","goto","auto","signed","const","extern","register",
-            "unsigned","return","continue","enum","sizeof","struct","typedef");
+            "unsigned","return","continue","enum","sizeof","struct","typedef", "true","false");
     private final List<String> directive = Arrays.asList("#include","#define","#undef","#ifdef","#ifndef","#if","#else",
             "#elif","#endif","#error","#pragma");
-    private final List<String> bool = Arrays.asList("true","false");
-    private final List<String> punctation = Arrays.asList("(",")","[","]","{","}",",",";",":",".");
-    private final List<String> operator = Arrays.asList(">=","!=","++","--","==","+=","-=","*=","/=",
-            "<=","+","-","=","*","%","/",">","<","!","^","&","?");
-    private final String quote  = "\"";
-    private final String lineComment = "//";
-    private final String startComment = "/*";
-    private final String endComment = "*/";
+
+    private void processComment(String line)
+    {
+        for (int i = 0; i < line.length() - 1; i++)
+        {
+            if (line.charAt(i) == '*' && line.charAt(i + 1) == '/')
+            {
+                inComment = false;
+                eatLine(line.substring(i + 2));
+                break;
+            }
+        }
+    }
+
+    private void processQuotes(String line)
+    {
+        StringBuilder word = new StringBuilder();
+        word.append('\"');
+        for (int i = 0; i < line.length(); i++)
+        {
+            if (line.charAt(i) == '\"')
+            {
+                word.append('\"');
+                Token token = new Token(Lexem.SYMBOL, word.toString());
+                lexems.add(token);
+                eatLine(line.substring(i + 1));
+                return;
+            }
+            else
+            {
+                word.append(line.charAt(i));
+            }
+        }
+        Token token = new Token(Lexem.ERROR, word.toString());
+        lexems.add(token);
+    }
+
+    private void directive(String line)
+    {
+        StringBuilder word = new StringBuilder();
+        word.append('#');
+        Token token;
+        for (int i = 0; i < line.length(); i++)
+        {
+            if (Character.isAlphabetic(line.charAt(i)))
+            {
+                word.append(line.charAt(i));
+            }
+            else
+            {
+                String w = word.toString();
+                if (directive.contains(w))
+                    token = new Token(Lexem.DIRECTIVE, w);
+                else
+                    token = new Token(Lexem.ERROR, w);
+                lexems.add(token);
+                eatLine(line.substring(i + 1));
+                return;
+            }
+        }
+        String w = word.toString();
+        if (directive.contains(w))
+            token = new Token(Lexem.DIRECTIVE, w);
+        else
+            token = new Token(Lexem.ERROR, w);
+        lexems.add(token);
+    }
 
     private boolean isNumeric(String strNum) {
         if (strNum == null) {
@@ -58,23 +117,9 @@ public class Lexer {
         {
             for (int i = 1; i < strIdent.length(); i++)
             {
-                if (!Character.isAlphabetic(strIdent.charAt(i)) && !Character.isDigit(strIdent.charAt(i)))
+                if (!Character.isAlphabetic(strIdent.charAt(i)) && !Character.isDigit(strIdent.charAt(i)) && strIdent.charAt(i) != '_')
                     return false;
 
-            }
-            return true;
-        }
-        else return false;
-    }
-
-    private boolean isHeader(String strHead)
-    {
-        if (strHead.endsWith(".h"))
-        {
-            for (int i = 0; i < (strHead.length() - 2); i++)
-            {
-                if (!Character.isAlphabetic(strHead.charAt(i)))
-                    return false;
             }
             return true;
         }
@@ -86,17 +131,6 @@ public class Lexer {
         return strChar.charAt(0) == '\'' && strChar.charAt(2) == '\'';
     }
 
-    private boolean startNum(StringBuilder num)
-    {
-        for (int i = 0; i < num.length(); i++)
-        {
-            if (!Character.isDigit(num.charAt(i)))
-                return false;
-        }
-        return true;
-    }
-
-
     public void outResults()
     {
         for (Token t : lexems)
@@ -105,136 +139,351 @@ public class Lexer {
         }
     }
 
-    private void addWord(StringBuilder w)
+    public void process(String l)
     {
-        String word = w.toString();
-        Token token;
-        if (reserved.contains(word))
-            token = new Token(Lexem.RESERVED, word);
-        else if (directive.contains(word))
-            token = new Token(Lexem.DIRECTIVE, word);
-        else if (bool.contains(word))
-            token = new Token(Lexem.BOOLEAN, word);
-        else if (isNumeric(word) || isHex(word))
-            token = new Token(Lexem.NUMBER, word);
-        else if (word.length() == 3 && isCharacter(word))
-            token = new Token(Lexem.CHARACTER, word);
-        else if (word.length() > 2 && isHeader(word))
-            token = new Token(Lexem.HEADER, word);
-        else if (isIdentifier(word))
-            token = new Token(Lexem.IDENTIFIER, word);
+        if (inComment)
+            processComment(l);
         else
-            token = new Token(Lexem.ERROR, word);
-        lexems.add(token);
+            eatLine(l);
     }
 
-    public void eatLine(String l)
+    private void eatLine(String l)
     {
         String line = l.trim();
-        StringBuilder word = new StringBuilder();
-        for (int i = 0; i < line.length(); i++)
+        int length = line.length();
+        for (int i = 0; i < length; i++)
         {
-            switch (state)
+            char curr = line.charAt(i);
+            switch (curr)
             {
-                case COMMENT: {
-                    if (i != (line.length() - 1)) {
-                        String doubleOp = Character.toString(line.charAt(i)) + Character.toString(line.charAt(i + 1));
-                        if (doubleOp.equals(endComment)) {
-                            state = State.COMMON;
-                            i++;
-                        }
+                case '>':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '=')
+                    {
+                        token = new Token(Lexem.OPERATOR, ">=");
+                        i++;
                     }
+                    else {
+                        token = new Token(Lexem.OPERATOR, ">");
+                    }
+                    lexems.add(token);
                     break;
                 }
-                case QUOTES: {
-                    if (Character.toString(line.charAt(i)).equals(quote))
+                case '&':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '&')
                     {
-                        state = State.COMMON;
-                        word.append(line.charAt(i));
-
-                        Token token = new Token(Lexem.SYMBOL, word.toString());
+                        token = new Token(Lexem.OPERATOR, "&&");
+                        i++;
+                    }
+                    else {
+                        token = new Token(Lexem.OPERATOR, "&");
+                    }
+                    lexems.add(token);
+                    break;
+                }
+                case '|':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '|')
+                    {
+                        token = new Token(Lexem.OPERATOR, "||");
+                        i++;
+                    }
+                    else {
+                        token = new Token(Lexem.OPERATOR, "|");
+                    }
+                    lexems.add(token);
+                    break;
+                }
+                case '<':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '=')
+                    {
+                        token = new Token(Lexem.OPERATOR, "<=");
+                        i++;
+                    }
+                    else {
+                        token = new Token(Lexem.OPERATOR, "<");
+                    }
+                    lexems.add(token);
+                    break;
+                }
+                case '=':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '=')
+                    {
+                        token = new Token(Lexem.OPERATOR, "==");
+                        i++;
+                    }
+                    else {
+                        token = new Token(Lexem.OPERATOR, "=");
+                    }
+                    lexems.add(token);
+                    break;
+                }
+                case '!':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '=')
+                    {
+                        token = new Token(Lexem.OPERATOR, "!=");
+                        i++;
+                    }
+                    else {
+                        token = new Token(Lexem.OPERATOR, "!");
+                    }
+                    lexems.add(token);
+                    break;
+                }
+                case '*':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '=')
+                    {
+                        token = new Token(Lexem.OPERATOR, "*=");
+                        i++;
+                    }
+                    else {
+                        token = new Token(Lexem.OPERATOR, "*");
+                    }
+                    lexems.add(token);
+                    break;
+                }
+                case '%':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '=')
+                    {
+                        token = new Token(Lexem.OPERATOR, "%=");
+                        i++;
+                    }
+                    else {
+                        token = new Token(Lexem.OPERATOR, "%");
+                    }
+                    lexems.add(token);
+                    break;
+                }
+                case '/':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '=')
+                    {
+                        token = new Token(Lexem.OPERATOR, "/=");
                         lexems.add(token);
-
-                        word = new StringBuilder();
+                        i++;
+                        break;
                     }
-                    else if (i == (line.length() - 1))
+                    else if (i != length - 1 && line.charAt(i + 1) == '/')
                     {
-                        word.append(line.charAt(i));
-                        addWord(word);
+                        return;
+                    }
+                    else if (i != length - 1 && line.charAt(i + 1) == '*')
+                    {
+                        inComment = true;
+                        processComment(line.substring(i));
+                        return;
                     }
                     else {
-                        word.append(line.charAt(i));
+                        token = new Token(Lexem.OPERATOR, "/");
+                        lexems.add(token);
+                        break;
                     }
+                }
+                case '+':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '=')
+                    {
+                        token = new Token(Lexem.OPERATOR, "+=");
+                        i++;
+                    }
+                    else if (i != length - 1 && line.charAt(i + 1) == '+')
+                    {
+                        token = new Token(Lexem.OPERATOR, "++");
+                        i++;
+                    }
+                    else {
+                        token = new Token(Lexem.OPERATOR, "+");
+                    }
+                    lexems.add(token);
                     break;
                 }
-                case COMMON: {
-                    if (quote.equals(Character.toString(line.charAt(i))))
+                case '-':
+                {
+                    Token token;
+                    if (i != length - 1 && line.charAt(i + 1) == '=')
                     {
-                        state = State.QUOTES;
-                        word.append(line.charAt(i));
+                        token = new Token(Lexem.OPERATOR, "-=");
+                        i++;
                     }
-                    else if (punctation.contains(Character.toString(line.charAt(i))))
+                    else if (i != length - 1 && line.charAt(i + 1) == '-')
                     {
-                        if (word.length() != 0) {
-                            if (startNum(word) && line.charAt(i) == '.') {
-                                word.append(line.charAt(i));
-                            } else {
-                                addWord(word);
-                                word = new StringBuilder();
-                                Token token = new Token(Lexem.PUNCTATION, Character.toString(line.charAt(i)));
-                                lexems.add(token);
-                            }
-                        } else {
-                            Token token = new Token(Lexem.PUNCTATION, Character.toString(line.charAt(i)));
-                            lexems.add(token);
-                        }
-                    }
-                    else if (operator.contains(Character.toString(line.charAt(i))))
-                    {
-                        if (word.length() != 0)
-                        {
-                            addWord(word);
-                            word = new StringBuilder();
-                        }
-                        if (i != (line.length() - 1))
-                        {
-                            String doubleOp = Character.toString(line.charAt(i)) + Character.toString(line.charAt(i + 1));
-
-                            if (startComment.equals(doubleOp)) {
-                                state = State.COMMENT;
-                            } else if (lineComment.equals(doubleOp)) {
-                                if (word.length() != 0) {
-                                    addWord(word);
-                                }
-                                return;
-                            } else if (operator.contains(doubleOp)) {
-                                Token token = new Token(Lexem.OPERATOR, doubleOp);
-                                lexems.add(token);
-                                i++;
-                            } else {
-                                Token token = new Token(Lexem.OPERATOR, Character.toString(line.charAt(i)));
-                                lexems.add(token);
-                            }
-                        }
-                        else {
-                            Token token = new Token(Lexem.OPERATOR, Character.toString(line.charAt(i)));
-                            lexems.add(token);
-                        }
-                    }
-                    else if (Character.isWhitespace(line.charAt(i)))
-                    {
-                        if (word.length() != 0)
-                        {
-                            addWord(word);
-                            word = new StringBuilder();
-                        }
+                        token = new Token(Lexem.OPERATOR, "--");
+                        i++;
                     }
                     else {
-                        word.append(line.charAt(i));
+                        token = new Token(Lexem.OPERATOR, "-");
                     }
+                    lexems.add(token);
                     break;
+                }
+                case '(':
+                {
+                    Token token = new Token(Lexem.PUNCTATION, "(");
+                    lexems.add(token);
+                    break;
+                }
+                case ')':
+                {
+                    Token token = new Token(Lexem.PUNCTATION, ")");
+                    lexems.add(token);
+                    break;
+                }
+                case '{':
+                {
+                    Token token = new Token(Lexem.PUNCTATION, "{");
+                    lexems.add(token);
+                    break;
+                }
+                case '}':
+                {
+                    Token token = new Token(Lexem.PUNCTATION, "}");
+                    lexems.add(token);
+                }
+                case '[':
+                {
+                    Token token = new Token(Lexem.PUNCTATION, "[");
+                    lexems.add(token);
+                    break;
+                }
+                case ']':
+                {
+                    Token token = new Token(Lexem.PUNCTATION, "]");
+                    lexems.add(token);
+                    break;
+                }
+                case ',':
+                {
+                    Token token = new Token(Lexem.PUNCTATION, ",");
+                    lexems.add(token);
+                    break;
+                }
+                case '.':
+                {
+                    Token token = new Token(Lexem.PUNCTATION, ".");
+                    lexems.add(token);
+                    break;
+                }
+                case ';':
+                {
+                    Token token = new Token(Lexem.PUNCTATION, ";");
+                    lexems.add(token);
+                    break;
+                }
+                case '\"':
+                {
+                    processQuotes(line.substring(i + 1));
+                    return;
+                }
+                case '#':
+                {
+                    directive(line.substring(i + 1));
+                    break;
+                }
+                default: {
+                    if (Character.isDigit(curr)) {
+                        processNumber(line.substring(i));
+                        return;
+                    }
+                    else if (Character.isLetter(curr) || curr == '_' || curr == '\'') {
+                        processWord(line.substring(i));
+                        return;
+                    }
+                    else if (Character.isWhitespace(curr))
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        Token token = new Token(Lexem.ERROR, Character.toString(curr));
+                        lexems.add(token);
+                        break;
+                    }
                 }
             }
         }
+    }
+
+    private void processWord(String line)
+    {
+        StringBuilder word = new StringBuilder();
+        Token token;
+        for (int i = 0; i < line.length(); i++)
+        {
+            if (Character.isAlphabetic(line.charAt(i)) || Character.isDigit(line.charAt(i)) || line.charAt(i) == '_' || line.charAt(i) == '\'')
+            {
+                word.append(line.charAt(i));
+            }
+            else
+            {
+                String w = word.toString();
+                if (reserved.contains(w))
+                    token = new Token(Lexem.RESERVED, w);
+                else if (w.length() == 3 && isCharacter(w))
+                    token = new Token(Lexem.CHARACTER, w);
+                else if (isIdentifier(w))
+                    token = new Token(Lexem.IDENTIFIER, w);
+                else
+                    token = new Token(Lexem.ERROR, w);
+                lexems.add(token);
+                eatLine(line.substring(i));
+                return;
+            }
+        }
+        String w = word.toString();
+        if (reserved.contains(w))
+            token = new Token(Lexem.RESERVED, w);
+        else if (w.length() == 3 && isCharacter(w))
+            token = new Token(Lexem.CHARACTER, w);
+        else if (isIdentifier(w))
+            token = new Token(Lexem.IDENTIFIER, w);
+        else
+            token = new Token(Lexem.ERROR, w);
+        lexems.add(token);
+    }
+
+    private void processNumber(String line)
+    {
+        StringBuilder word = new StringBuilder();
+        Token token;
+        for (int i = 0; i < line.length(); i++)
+        {
+            if (Character.isDigit(line.charAt(i)) || Character.isAlphabetic(line.charAt(i)) || line.charAt(i) == '.')
+            {
+                word.append(line.charAt(i));
+            }
+            else
+            {
+                String w = word.toString();
+                if (isHex(w) || isNumeric(w))
+                    token = new Token(Lexem.NUMBER, w);
+                else
+                    token = new Token(Lexem.ERROR, w);
+                lexems.add(token);
+                eatLine(line.substring(i));
+                return;
+            }
+        }
+        String w = word.toString();
+        if (isHex(w) || isNumeric(w))
+            token = new Token(Lexem.NUMBER, w);
+        else
+            token = new Token(Lexem.ERROR, w);
+        lexems.add(token);
     }
 }
